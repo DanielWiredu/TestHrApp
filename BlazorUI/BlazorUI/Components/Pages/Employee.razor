@@ -1,0 +1,241 @@
+﻿@page "/employee"
+@rendermode InteractiveServer
+
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject IHttpClientFactory ClientFactory
+@inject Microsoft.Extensions.Configuration.IConfiguration config
+@inject IJSRuntime JS
+@using BlazorInputFile
+@using System.IO
+
+<h3>Employee</h3>
+
+<button type="button" class="btn btn-primary m-2 float-end" data-bs-toggle="modal" data-bs-target="#exampleModal" @onclick="addClick">Add Employee</button>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Employee Id</th>
+            <th>Employee Name</th>
+            <th>Department</th>
+            <th>Date Of Joining</th>
+            <th>Photo File</th>
+            <th>Options</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var emp in employees)
+        {
+            <tr>
+                <td>@emp.EmployeeId</td>
+                <td>@emp.EmployeeName</td>
+                <td>@emp.Department</td>
+                <td>@emp.DateOfJoining</td>
+                <td>@emp.PhotoFileName</td>
+                <td>
+                    <button type="button" class="btn btn-light mr-1" data-bs-toggle="modal" data-bs-target="#exampleModal" @onclick="(()=> editClick(emp))">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>
+                    <button type="button" class="btn btn-light mr-1" @onclick="(()=> deleteClick(emp.EmployeeId))">
+                        <i class="bi bi-trash-fill"></i>
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="=exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalLabel">@modalTitle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+
+                <div class="d-flex flex-row bd-highlight mb-3">
+                    <div class="p-2 w-50 bd-highlight">
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Employee Name</span>
+                            <input type="text" class="form-control" @bind="EmployeeName" />
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Department Name</span>
+                            <select class="form-select" @bind="Department">
+                                @foreach (var dep in departments)
+                                {
+                                    <option>@dep.DepartmentName</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Date Joined</span>
+                            <input type="date" class="form-control" @bind="DateOfJoining" />
+                        </div>
+                    </div>
+                    <div class="p-2 w-50 bd-highlight">
+                        <img width="250" height="250" src="@PhotoPath/@PhotoFileName" />
+                        <BlazorInputFile.InputFile class="m-2" OnChange="UploadFile"></BlazorInputFile.InputFile>
+                    </div>
+                </div>
+
+
+                @if (modalTitle == "Add Employee")
+                {
+                    <button type="button" class="btn btn-primary" @onclick="createClick">Create</button>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-primary" @onclick="updateClick">Update</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    public class DepartmentClass
+    {
+        public int DepartmentId { get; set; }
+        public string DepartmentName { get; set; }
+    }
+    public class EmployeeClass
+    {
+        public int EmployeeId { get; set; }
+        public string EmployeeName { get; set; }
+        public string Department { get; set; }
+        public string DateOfJoining { get; set; }
+        public string PhotoFileName { get; set; }
+    }
+
+    private IEnumerable<DepartmentClass> departments = Array.Empty<DepartmentClass>();
+
+    private IEnumerable<EmployeeClass> employees = Array.Empty<EmployeeClass>();
+
+    private string modalTitle;
+    private int EmployeeId;
+    private string EmployeeName;
+    private string Department;
+    private DateTime DateOfJoining;
+    private string PhotoFileName;
+    private string PhotoPath;
+
+    private async Task refreshList()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, config["API_URL"] + "department");
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        departments = await JsonSerializer.DeserializeAsync<IEnumerable<DepartmentClass>>(responseStream) ?? Array.Empty<DepartmentClass>();
+
+        var request2 = new HttpRequestMessage(HttpMethod.Get, config["API_URL"] + "employee");
+        var client2 = ClientFactory.CreateClient();
+        var response2 = await client2.SendAsync(request2);
+        using var responseStream2 = await response2.Content.ReadAsStreamAsync();
+        employees = await JsonSerializer.DeserializeAsync<IEnumerable<EmployeeClass>>(responseStream2) ?? Array.Empty<EmployeeClass>();
+    }
+
+    private async Task UploadFile(IFileListEntry[] files)
+    {
+        var file = files.FirstOrDefault();
+        var memoryStream = new MemoryStream();
+        await file.Data.CopyToAsync(memoryStream);
+
+        var content = new MultipartFormDataContent { { new ByteArrayContent(memoryStream.GetBuffer()), "\"file\"", file.Name } };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, config["API_URL"] + "employee/savefile");
+        request.Content = content;
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        PhotoFileName = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+
+    }
+
+    private async Task createClick()
+    {
+        var empObj = new EmployeeClass()
+            {
+                EmployeeName = EmployeeName,
+                Department = Department,
+                DateOfJoining = DateOfJoining.ToString("yyyy-MM-dd"),
+                PhotoFileName = PhotoFileName
+            };
+        var request = new HttpRequestMessage(HttpMethod.Post, config["API_URL"] + "employee");
+        request.Content = new StringContent(JsonSerializer.Serialize(empObj), null, "application/json");
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        string apiResponse = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+        await JS.InvokeVoidAsync("alert", apiResponse);
+        await refreshList();
+    }
+
+    private async Task updateClick()
+    {
+        var empObj = new EmployeeClass()
+            {
+                EmployeeId = EmployeeId,
+                EmployeeName = EmployeeName,
+                Department = Department,
+                DateOfJoining = DateOfJoining.ToString("yyyy-MM-dd"),
+                PhotoFileName = PhotoFileName
+            };
+        var request = new HttpRequestMessage(HttpMethod.Put, config["API_URL"] + "employee");
+        request.Content = new StringContent(JsonSerializer.Serialize(empObj), null, "application/json");
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        string apiResponse = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+        await JS.InvokeVoidAsync("alert", apiResponse);
+        await refreshList();
+    }
+
+    private async Task deleteClick(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure?"))
+        {
+            return;
+
+        }
+        var request = new HttpRequestMessage(HttpMethod.Delete, config["API_URL"] + "employee/" + id.ToString());
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        string apiResponse = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+        await JS.InvokeVoidAsync("alert", apiResponse);
+        await refreshList();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        PhotoPath = config["PHOTO_URL"] ?? string.Empty;
+        PhotoFileName = "anonymous.png";
+        await refreshList();
+    }
+
+    private void addClick()
+    {
+        modalTitle = "Add Employee";
+        EmployeeId = 0;
+        EmployeeName = string.Empty;
+        Department = "";
+        DateOfJoining = DateTime.UtcNow;
+        PhotoFileName = "anonymous.png";
+    }
+    private void editClick(EmployeeClass employee)
+    {
+        modalTitle = "Edit Employee";
+        EmployeeId = employee.EmployeeId;
+        EmployeeName = employee.EmployeeName;
+        Department = employee.Department;
+        DateOfJoining = Convert.ToDateTime(employee.DateOfJoining);
+        PhotoFileName = employee.PhotoFileName;
+    }
+}

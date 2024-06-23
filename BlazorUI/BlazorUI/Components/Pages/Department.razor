@@ -1,0 +1,202 @@
+﻿@page "/department"
+@rendermode InteractiveServer
+
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject IHttpClientFactory ClientFactory
+@inject Microsoft.Extensions.Configuration.IConfiguration config
+@inject IJSRuntime JS
+
+<h3>Department</h3>
+
+<button type="button" class="btn btn-primary m-2 float-end" data-bs-toggle="modal" data-bs-target="#exampleModal" @onclick="addClick">Add Department</button>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>
+                <div class="d-flex flex-row">
+                    <input class="form-control m-2" @bind="DepartmentIdFilter" />
+                    <button class="m-1" @onclick="FilterFn">Filter</button>
+                    <button class="btn btn-light" @onclick='()=>SortFn("DepartmentId","asc")'><i class="bi bi-arrow-up"></i></button>
+                    <button class="btn btn-light" @onclick='()=>SortFn("DepartmentId","desc")'><i class="bi bi-arrow-down"></i></button>
+                </div>
+                Department Id</th>
+            <th>
+                <div class="d-flex flex-row">
+                    <input class="form-control m-2" @bind="DepartmentNameFilter" />
+                    <button class="m-1" @onclick="FilterFn">Filter</button>
+                    <button class="btn btn-light" @onclick='()=>SortFn("DepartmentName","asc")'><i class="bi bi-arrow-up"></i></button>
+                    <button class="btn btn-light" @onclick='()=>SortFn("DepartmentName","desc")'><i class="bi bi-arrow-down"></i></button>
+                </div>
+                Department Name</th>
+            <th>Options</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var dep in departments)
+        {
+            <tr>
+                <td>@dep.DepartmentId</td>
+                <td>@dep.DepartmentName</td>
+                <td>
+                    <button type="button" class="btn btn-light mr-1" data-bs-toggle="modal" data-bs-target="#exampleModal" @onclick="(()=> editClick(dep))">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>
+                    <button type="button" class="btn btn-light mr-1" @onclick="(()=> deleteClick(dep.DepartmentId))">
+                        <i class="bi bi-trash-fill"></i>
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="=exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalLabel">@modalTitle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <span class="input-group-text">Department Name</span>
+                    <input type="text" class="form-control" @bind="DepartmentName" />
+                </div>
+
+                @if(modalTitle == "Add Department")
+                {
+                    <button type="button" class="btn btn-primary" @onclick="createClick">Create</button>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-primary" @onclick="updateClick">Update</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    public class DepartmentClass
+    {
+        public int DepartmentId { get; set; }
+        public string DepartmentName { get; set; }
+    }
+
+    private IEnumerable<DepartmentClass> departments = Array.Empty<DepartmentClass>();
+
+    private string DepartmentIdFilter = "";
+    private string DepartmentNameFilter = "";
+
+    private IEnumerable<DepartmentClass> departmentsWithoutFilter = Array.Empty<DepartmentClass>();
+
+    private string modalTitle;
+    private int DepartmentId;
+    private string DepartmentName;
+
+    private async Task refreshList()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, config["API_URL"] + "department");
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        departmentsWithoutFilter = departments = await JsonSerializer.DeserializeAsync<IEnumerable<DepartmentClass>>(responseStream) ?? Array.Empty<DepartmentClass>();
+    }
+
+    private void FilterFn()
+    {
+        departments = departmentsWithoutFilter.Where(c => 
+            c.DepartmentId.ToString().Contains(DepartmentIdFilter) && c.DepartmentName.ToLower().Contains(DepartmentNameFilter.ToLower())
+        );
+    }
+
+    private void SortFn(string property, string asc_desc)
+    {
+        if (property == "DepartmentId")
+        {
+            if (asc_desc == "asc")
+                departments = departmentsWithoutFilter.OrderBy(c => c.DepartmentId);
+            else
+                departments = departmentsWithoutFilter.OrderByDescending(c => c.DepartmentId);
+        }
+        else if (property == "DepartmentName")
+        {
+            if (asc_desc == "asc")
+                departments = departmentsWithoutFilter.OrderBy(c => c.DepartmentName);
+            else
+                departments = departmentsWithoutFilter.OrderByDescending(c => c.DepartmentName);
+        }
+    }
+
+    private async Task createClick()
+    {
+        var depObj = new DepartmentClass()
+            {
+                DepartmentName = DepartmentName
+            };
+        var request = new HttpRequestMessage(HttpMethod.Post, config["API_URL"] + "department");
+        request.Content = new StringContent(JsonSerializer.Serialize(depObj), null, "application/json");
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        string apiResponse = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+        await JS.InvokeVoidAsync("alert", apiResponse);
+        await refreshList();
+    }
+
+    private async Task updateClick()
+    {
+        var depObj = new DepartmentClass()
+            {
+                DepartmentId = DepartmentId,
+                DepartmentName = DepartmentName
+            };
+        var request = new HttpRequestMessage(HttpMethod.Put, config["API_URL"] + "department");
+        request.Content = new StringContent(JsonSerializer.Serialize(depObj), null, "application/json");
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        string apiResponse = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+        await JS.InvokeVoidAsync("alert", apiResponse);
+        await refreshList();
+    }
+
+    private async Task deleteClick(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure?"))
+        {
+            return;
+
+        }
+        var request = new HttpRequestMessage(HttpMethod.Delete, config["API_URL"] + "department/" + id.ToString());
+
+        var client = ClientFactory.CreateClient();
+        var response = await client.SendAsync(request);
+        using var responseStream = await response.Content.ReadAsStreamAsync();
+        string apiResponse = await JsonSerializer.DeserializeAsync<string>(responseStream) ?? string.Empty;
+        await JS.InvokeVoidAsync("alert", apiResponse);
+        await refreshList();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await refreshList();
+    }
+
+    private void addClick()
+    {
+        modalTitle = "Add Department";
+        DepartmentId = 0;
+        DepartmentName = string.Empty;
+    }
+    private void editClick(DepartmentClass department)
+    {
+        modalTitle = "Edit Department";
+        DepartmentId = department.DepartmentId;
+        DepartmentName = department.DepartmentName;
+    }
+}
